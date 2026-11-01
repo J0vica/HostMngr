@@ -61,8 +61,14 @@ jobs:
           test -f package/feeds/iopsys/libeasy/Makefile
 
       - name: Show libeasy Makefile
+        shell: bash
         run: |
-          cat "$SDK_DIR/package/feeds/iopsys/libeasy/Makefile"
+          echo "SDK_DIR=$SDK_DIR"
+          echo "Checking for libeasy Makefile..."
+          ls -la "$SDK_DIR/package/feeds/iopsys/libeasy/"
+          echo "----- MAKEFILE START -----"
+          sed -n '1,240p' "$SDK_DIR/package/feeds/iopsys/libeasy/Makefile"
+          echo "----- MAKEFILE END -----"
 
       - name: Configure SDK packages
         shell: bash
