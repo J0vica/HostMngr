@@ -60,6 +60,10 @@ jobs:
           test -f package/feeds/iopsys/hostmngr/Makefile
           test -f package/feeds/iopsys/libeasy/Makefile
 
+      - name: Show libeasy Makefile
+        run: |
+          cat "$SDK_DIR/package/feeds/iopsys/libeasy/Makefile"
+
       - name: Configure SDK packages
         shell: bash
         run: |
