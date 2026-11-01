@@ -41,10 +41,7 @@ jobs:
 
       - name: Add IOPSYS feed and install package recipes
 
-      - name: Show libeasy Makefile
-        run: |
-          cat "$SDK_DIR/package/feeds/iopsys/libeasy/Makefile"
-      
+           
         shell: bash
         run: |
           set -euo pipefail
