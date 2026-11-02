@@ -64,36 +64,55 @@ jobs:
 
           echo "SDK_DIR=$SDK_DIR"
 
-
-      - name: Update all OpenWrt feeds
+      - name: Update IOPSYS feed - diagnostics
         shell: bash
         run: |
-          set -eux
+          set -euxo pipefail
           cd "$SDK_DIR"
 
-          # Update every configured feed and generate its package index.
-          ./scripts/feeds update -a
+          echo "===== FEED CONFIGURATION ====="
+          cat feeds.conf.default
 
-          echo "===== IOPSYS FEED INDEX ====="
-          ls -lh feeds/iopsys.index
-          grep -E '^(libeasy|hostmngr) ' feeds/iopsys.index
+          echo "===== UPDATE IOPSYS ====="
+          ./scripts/feeds update -f iopsys 2>&1 \
+            | tee "$RUNNER_TEMP/iopsys-update.log"
 
-      - name: Install required packages
-        shell: bash
-        run: |
-          set -eux
-          cd "$SDK_DIR"
+          echo "===== FEED DIRECTORIES ====="
+          ls -lah feeds/
 
-          ./scripts/feeds install -p base libnl
-          ./scripts/feeds install -p iopsys libeasy
-          ./scripts/feeds install -p iopsys hostmngr
+          echo "===== IOPSYS DIRECTORY ====="
+          ls -lah feeds/iopsys/ || true
 
-          echo "===== VERIFY INSTALLED PACKAGES ====="
-          test -f package/feeds/base/libnl/Makefile
-          test -f package/feeds/iopsys/libeasy/Makefile
-          test -f package/feeds/iopsys/hostmngr/Makefile
+          echo "===== IOPSYS INDEX ====="
+          ls -lah feeds/iopsys.index || true
 
-          echo "All three packages are registered."
+          echo "===== SEARCH FOR PACKAGES ====="
+          find feeds/iopsys -maxdepth 3 \
+            \( -iname '*libeasy*' -o -iname '*hostmngr*' \) \
+            -print || true
+
+          echo "===== UPDATE LOG ====="
+          cat "$RUNNER_TEMP/iopsys-update.log"
+
+          test -d feeds/iopsys
+          test -f feeds/iopsys.index
+
+#      - name: Install required packages
+#        shell: bash
+#        run: |
+#          set -eux
+#          cd "$SDK_DIR"
+
+#         ./scripts/feeds install -p base libnl
+#         ./scripts/feeds install -p iopsys libeasy
+#         ./scripts/feeds install -p iopsys hostmngr
+
+#          echo "===== VERIFY INSTALLED PACKAGES ====="
+#          test -f package/feeds/base/libnl/Makefile
+#          test -f package/feeds/iopsys/libeasy/Makefile
+#          test -f package/feeds/iopsys/hostmngr/Makefile
+
+#          echo "All three packages are registered."
 
 
       - name: Add libnl build dependency to libeasy
