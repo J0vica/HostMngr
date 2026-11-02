@@ -64,6 +64,27 @@ jobs:
 
           echo "SDK_DIR=$SDK_DIR"
 
+      - name: Configure IOPSYS feed
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cd "$SDK_DIR"
+
+          # Add IOPSYS feed if it is not already configured
+          if ! grep -q 'iopsys.git' feeds.conf; then
+          echo 'src-git iopsys https://dev.iopsys.eu/feed/iopsys.git;devel' >> feeds.conf
+          fi
+
+          echo "===== FEEDS CONFIGURATION ====="
+          cat feeds.conf
+
+          # Download IOPSYS feed
+          ./scripts/feeds update -f iopsys
+
+          echo "===== DOWNLOADED IOPSYS FEED ====="
+          ls -lah feeds/iopsys/
+          ls -lah feeds/iopsys.index
+
       - name: Diagnose IOPSYS feed configuration
         shell: bash
         run: |
