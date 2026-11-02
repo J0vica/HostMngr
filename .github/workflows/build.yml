@@ -60,15 +60,38 @@ jobs:
           test -f package/feeds/iopsys/hostmngr/Makefile
           test -f package/feeds/iopsys/libeasy/Makefile
 
-      - name: Show libeasy Makefile
+#      - name: Show libeasy Makefile
+#        shell: bash
+#        run: |
+#          echo "SDK_DIR=$SDK_DIR"
+#          echo "Checking for libeasy Makefile..."
+#          ls -la "$SDK_DIR/package/feeds/iopsys/libeasy/"
+#          echo "----- MAKEFILE START -----"
+#          sed -n '1,240p' "$SDK_DIR/package/feeds/iopsys/libeasy/Makefile"
+#          echo "----- MAKEFILE END -----"
+
+      - name: Fetch libeasy source directly from IOPSYS Git
         shell: bash
         run: |
-          echo "SDK_DIR=$SDK_DIR"
-          echo "Checking for libeasy Makefile..."
-          ls -la "$SDK_DIR/package/feeds/iopsys/libeasy/"
-          echo "----- MAKEFILE START -----"
-          sed -n '1,240p' "$SDK_DIR/package/feeds/iopsys/libeasy/Makefile"
-          echo "----- MAKEFILE END -----"
+          set -eux
+
+          LIBEASY_COMMIT="da04ef953af966b47d61a9de3eeeb0c6032c7ce5"
+          LIBEASY_DIR="/tmp/libeasy"
+
+          rm -rf "$LIBEASY_DIR"
+          git clone https://dev.iopsys.eu/hal/libeasy.git "$LIBEASY_DIR"
+
+          git -C "$LIBEASY_DIR" checkout "$LIBEASY_COMMIT"
+
+          mkdir -p "$SDK_DIR/dl"
+
+          git -C "$LIBEASY_DIR" archive \
+            --format=tar \
+            --prefix=libeasy-7.5.2/ \
+            "$LIBEASY_COMMIT" \
+            | xz -T0 > "$SDK_DIR/dl/libeasy-7.5.2_${LIBEASY_COMMIT}.tar.xz"
+
+          ls -lh "$SDK_DIR/dl/libeasy-7.5.2_${LIBEASY_COMMIT}.tar.xz"
 
       - name: Configure SDK packages
         shell: bash
