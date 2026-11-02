@@ -135,16 +135,26 @@ jobs:
           echo "===== INSTALLED PACKAGE LINKS ====="
           ls -la package/feeds/iopsys/ || true
 
+      - name: Add libnl build dependency to libeasy
+        shell: bash
+        run: |
+          set -eux
+
+          MAKEFILE="$SDK_DIR/feeds/iopsys/libeasy/Makefile"
+
+          if ! grep -q '^PKG_BUILD_DEPENDS:=' "$MAKEFILE"; then
+            sed -i '/^PKG_NAME:=libeasy$/a PKG_BUILD_DEPENDS:=libnl' "$MAKEFILE"
+          fi
+
+          echo "===== UPDATED LIBEASY MAKEFILE ====="
+          grep -n -E 'PKG_NAME|PKG_BUILD_DEPENDS|DEPENDS' "$MAKEFILE"
+
       - name: Compile libeasy
         shell: bash
         run: |
           cd "$SDK_DIR"
           set -o pipefail
 
-          echo "===== VERIFY PACKAGE ====="
-          ls -l package/feeds/iopsys/libeasy/Makefile
-
-          echo "===== COMPILE ====="
           make package/feeds/iopsys/libeasy/compile V=s 2>&1 \
             | tee "$RUNNER_TEMP/libeasy-build.log"
 
