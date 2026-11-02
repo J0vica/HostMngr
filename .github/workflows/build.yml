@@ -60,15 +60,6 @@ jobs:
           test -f package/feeds/iopsys/hostmngr/Makefile
           test -f package/feeds/iopsys/libeasy/Makefile
 
-#      - name: Show libeasy Makefile
-#        shell: bash
-#        run: |
-#          echo "SDK_DIR=$SDK_DIR"
-#          echo "Checking for libeasy Makefile..."
-#          ls -la "$SDK_DIR/package/feeds/iopsys/libeasy/"
-#          echo "----- MAKEFILE START -----"
-#          sed -n '1,240p' "$SDK_DIR/package/feeds/iopsys/libeasy/Makefile"
-#          echo "----- MAKEFILE END -----"
 
       - name: Fetch libeasy source directly from IOPSYS Git
         shell: bash
@@ -93,6 +84,26 @@ jobs:
 
           ls -lh "$SDK_DIR/dl/libeasy-7.5.2_${LIBEASY_COMMIT}.tar.xz"
 
+      - name: Diagnose IOPSYS feed registration
+        shell: bash
+        run: |
+          echo "===== SDK ROOT ====="
+          ls -la "$SDK_DIR"
+
+          echo "===== FEED CONFIGURATION ====="
+          grep -n -A 10 -B 3 "iopsys" "$SDK_DIR/feeds.conf" || true
+          grep -n -A 10 -B 3 "iopsys" "$SDK_DIR/feeds.conf.default" || true
+
+          echo "===== LIBEASY LOCATIONS ====="
+          find "$SDK_DIR" -type f -path "*/libeasy/Makefile" -print
+
+          echo "===== FEEDS DIRECTORY ====="
+          ls -la "$SDK_DIR/feeds/" || true
+
+          echo "===== PACKAGE TARGETS ====="
+          cd "$SDK_DIR"
+          make help 2>&1 | head -100
+
       - name: Configure SDK packages
         shell: bash
         run: |
@@ -104,12 +115,15 @@ jobs:
             >> .config
           make defconfig
 
-#      - name: Build libeasy
-#        shell: bash
-#       run: |
-#          set -euo pipefail
-#          cd "$SDK_DIR"
-#          make -j"$(nproc)" package/feeds/iopsys/libeasy/compile V=s
+      - name: Update IOPSYS feed
+        run: |
+          cd "$SDK_DIR"
+          ./scripts/feeds update iopsys
+
+      - name: Install IOPSYS packages
+        run: |
+          cd "$SDK_DIR"
+          ./scripts/feeds install -p iopsys libeasy hostmngr
 
       - name: Compile libeasy with verbose diagnostics
         shell: bash
