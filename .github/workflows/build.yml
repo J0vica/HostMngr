@@ -120,44 +120,33 @@ jobs:
           cd "$SDK_DIR"
           ./scripts/feeds update iopsys
 
+#      - name: Install IOPSYS packages
+#        run: |
+#          cd "$SDK_DIR"
+#          ./scripts/feeds install -p iopsys libeasy hostmngr
+
       - name: Install IOPSYS packages
+        shell: bash
         run: |
           cd "$SDK_DIR"
+          ./scripts/feeds update iopsys
           ./scripts/feeds install -p iopsys libeasy hostmngr
 
-      - name: Compile libeasy with verbose diagnostics
+          echo "===== INSTALLED PACKAGE LINKS ====="
+          ls -la package/feeds/iopsys/ || true
+
+      - name: Compile libeasy
         shell: bash
         run: |
-          set +e
-          echo "===== SDK DIRECTORY ====="
-          echo "$SDK_DIR"
+          cd "$SDK_DIR"
+          set -o pipefail
 
-          echo "===== AVAILABLE LIBEASY TARGETS ====="
-          make package/feeds/iopsys/libeasy/printvars V=s
+          echo "===== VERIFY PACKAGE ====="
+          ls -l package/feeds/iopsys/libeasy/Makefile
 
-          echo "===== COMPILE LIBEASY ====="
-          make package/feeds/iopsys/libeasy/compile V=s 2>&1 | tee "$RUNNER_TEMP/libeasy-build.log"
-
-          exit ${PIPESTATUS[0]}
-
-      - name: Extract libeasy configuration errors
-        if: always()
-        shell: bash
-        run: |
-          LOG="$RUNNER_TEMP/libeasy-build.log"
-
-          if [ ! -f "$LOG" ]; then
-            echo "Build log was not created."
-            exit 0
-          fi
-
-          echo "===== CMAKE ERRORS ====="
-          grep -in -B 15 -A 30 -E \
-            'CMake Error|error:|not found|Could NOT find|No such file|Configuring incomplete' \
-            "$LOG" || true
-
-          echo "===== LAST 200 LINES ====="
-          tail -200 "$LOG"          
+          echo "===== COMPILE ====="
+          make package/feeds/iopsys/libeasy/compile V=s 2>&1 \
+            | tee "$RUNNER_TEMP/libeasy-build.log"
 
       - name: Show libeasy CMake error logs
         if: failure()
