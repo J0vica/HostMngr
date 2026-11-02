@@ -111,6 +111,32 @@ jobs:
           cd "$SDK_DIR"
           make -j"$(nproc)" package/feeds/iopsys/libeasy/compile V=s
 
+      - name: Show libeasy CMake error logs
+        if: failure()
+        shell: bash
+        run: |
+          BUILD_DIR="$SDK_DIR/build_dir/target-x86_64_musl/libeasy-7.5.2"
+
+          echo "===== CMakeError.log ====="
+          if [ -f "$BUILD_DIR/CMakeFiles/CMakeError.log" ]; then
+            cat "$BUILD_DIR/CMakeFiles/CMakeError.log"
+          else
+            echo "CMakeError.log not found"
+          fi
+
+          echo "===== CMakeOutput.log ====="
+          if [ -f "$BUILD_DIR/CMakeFiles/CMakeOutput.log" ]; then
+            tail -200 "$BUILD_DIR/CMakeFiles/CMakeOutput.log"
+          else
+            echo "CMakeOutput.log not found"
+          fi
+
+          echo "===== CMakeCache.txt ====="
+          if [ -f "$BUILD_DIR/CMakeCache.txt" ]; then
+            grep -E 'CMAKE_(C|CXX)_COMPILER:|CMAKE_PREFIX_PATH:|CMAKE_FIND_ROOT_PATH:' \
+              "$BUILD_DIR/CMakeCache.txt" || true
+          fi
+
       - name: Build hostmngr without Wi-Fi
         shell: bash
         run: |
