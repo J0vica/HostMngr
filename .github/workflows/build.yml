@@ -150,22 +150,22 @@ jobs:
           test -d feeds/iopsys
           test -f feeds/iopsys.index
 
-#      - name: Install required packages
-#        shell: bash
-#        run: |
-#          set -eux
-#          cd "$SDK_DIR"
+      - name: Install required packages
+        shell: bash
+        run: |
+          set -eux
+          cd "$SDK_DIR"
 
-#         ./scripts/feeds install -p base libnl
-#         ./scripts/feeds install -p iopsys libeasy
-#         ./scripts/feeds install -p iopsys hostmngr
+          ./scripts/feeds install -p base libnl
+          ./scripts/feeds install -p iopsys libeasy
+          ./scripts/feeds install -p iopsys hostmngr
 
-#          echo "===== VERIFY INSTALLED PACKAGES ====="
-#          test -f package/feeds/base/libnl/Makefile
-#          test -f package/feeds/iopsys/libeasy/Makefile
-#          test -f package/feeds/iopsys/hostmngr/Makefile
+          echo "===== VERIFY INSTALLED PACKAGES ====="
+          test -f package/feeds/base/libnl/Makefile
+          test -f package/feeds/iopsys/libeasy/Makefile
+          test -f package/feeds/iopsys/hostmngr/Makefile
 
-#          echo "All three packages are registered."
+          echo "All three packages are registered."
 
 
       - name: Add libnl build dependency to libeasy
