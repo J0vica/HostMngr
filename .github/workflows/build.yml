@@ -149,6 +149,33 @@ jobs:
           echo "===== UPDATED LIBEASY MAKEFILE ====="
           grep -n -E 'PKG_NAME|PKG_BUILD_DEPENDS|DEPENDS' "$MAKEFILE"
 
+      - name: Build and stage OpenWrt libnl
+        shell: bash
+        run: |
+          set -eux
+          cd "$SDK_DIR"
+
+          make package/libs/libnl/compile V=s
+
+          echo "===== CHECK LIBNL PKG-CONFIG FILES ====="
+          find staging_dir/target-x86_64_musl \
+            -name 'libnl-3.0.pc' \
+            -o -name 'libnl-route-3.0.pc'
+
+          echo "===== CHECK LIBNL HEADER ====="
+          ls -la staging_dir/target-x86_64_musl/usr/include/libnl3/netlink/
+
+      - name: Verify libnl pkg-config
+        shell: bash
+        run: |
+          cd "$SDK_DIR"
+
+          find staging_dir/target-x86_64_musl/usr/lib/pkgconfig \
+            -maxdepth 1 -name 'libnl*.pc' -print
+
+          echo "===== PKG CONFIG ENVIRONMENT ====="
+          env | grep -E 'PKG_CONFIG|STAGING_DIR' || true          
+
       - name: Compile libeasy
         shell: bash
         run: |
