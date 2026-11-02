@@ -64,6 +64,38 @@ jobs:
 
           echo "SDK_DIR=$SDK_DIR"
 
+      - name: Diagnose IOPSYS feed configuration
+        shell: bash
+        run: |
+           set -euxo pipefail
+           cd "$SDK_DIR"
+
+           echo "===== SDK DIRECTORY ====="
+           pwd
+           ls -lah
+
+           echo "===== FEED CONFIGURATION FILES ====="
+           ls -lah feeds.conf*
+
+           echo "===== IOPSYS CONFIGURATION ====="
+           grep -n -i iopsys feeds.conf feeds.conf.default 2>/dev/null || true
+
+           echo "===== ALL FEED CONFIGURATION ====="
+           cat feeds.conf 2>/dev/null || true
+           cat feeds.conf.default 2>/dev/null || true
+
+           echo "===== UPDATE SCRIPT ====="
+           ls -l scripts/feeds
+           head -n 5 scripts/feeds
+
+           echo "===== RUN IOPSYS UPDATE ====="
+           ./scripts/feeds update -f iopsys 2>&1 | tee "$RUNNER_TEMP/iopsys-update.log"
+
+           echo "===== UPDATE EXIT STATUS ====="
+           echo "The update command completed."
+           ls -lah feeds/
+
+
       - name: Update IOPSYS feed - diagnostics
         shell: bash
         run: |
