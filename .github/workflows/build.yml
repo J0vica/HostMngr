@@ -64,91 +64,48 @@ jobs:
 
           echo "SDK_DIR=$SDK_DIR"
 
-      - name: Configure IOPSYS feed
+      - name: Configure all OpenWrt feeds
         shell: bash
         run: |
           set -euxo pipefail
           cd "$SDK_DIR"
 
-          # Add IOPSYS feed if it is not already configured
+          # Restore the SDK's original feeds
+          cp feeds.conf.default feeds.conf
+
+          # Add IOPSYS without removing the standard feeds
           if ! grep -q 'iopsys.git' feeds.conf; then
           echo 'src-git iopsys https://dev.iopsys.eu/feed/iopsys.git;devel' >> feeds.conf
           fi
 
-          echo "===== FEEDS CONFIGURATION ====="
+          echo "===== FEED CONFIGURATION ====="
           cat feeds.conf
 
-          # Download IOPSYS feed
-          ./scripts/feeds update -f iopsys
-
-          echo "===== DOWNLOADED IOPSYS FEED ====="
-          ls -lah feeds/iopsys/
-          ls -lah feeds/iopsys.index
-
-      - name: Diagnose IOPSYS feed configuration
-        shell: bash
-        run: |
-           set -euxo pipefail
-           cd "$SDK_DIR"
-
-           echo "===== SDK DIRECTORY ====="
-           pwd
-           ls -lah
-
-           echo "===== FEED CONFIGURATION FILES ====="
-           ls -lah feeds.conf*
-
-           echo "===== IOPSYS CONFIGURATION ====="
-           grep -n -i iopsys feeds.conf feeds.conf.default 2>/dev/null || true
-
-           echo "===== ALL FEED CONFIGURATION ====="
-           cat feeds.conf 2>/dev/null || true
-           cat feeds.conf.default 2>/dev/null || true
-
-           echo "===== UPDATE SCRIPT ====="
-           ls -l scripts/feeds
-           head -n 5 scripts/feeds
-
-           echo "===== RUN IOPSYS UPDATE ====="
-           ./scripts/feeds update -f iopsys 2>&1 | tee "$RUNNER_TEMP/iopsys-update.log"
-
-           echo "===== UPDATE EXIT STATUS ====="
-           echo "The update command completed."
-           ls -lah feeds/
-
-
-      - name: Update IOPSYS feed - diagnostics
+      - name: Update all feeds
         shell: bash
         run: |
           set -euxo pipefail
           cd "$SDK_DIR"
 
-          echo "===== FEED CONFIGURATION ====="
-          cat feeds.conf.default
+          ./scripts/feeds update -a
 
-          echo "===== UPDATE IOPSYS ====="
-          ./scripts/feeds update -f iopsys 2>&1 \
-            | tee "$RUNNER_TEMP/iopsys-update.log"
+          echo "===== AVAILABLE FEED INDEXES ====="
+          ls -lh feeds/*.index
 
-          echo "===== FEED DIRECTORIES ====="
-          ls -lah feeds/
+      - name: Install package feeds
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cd "$SDK_DIR"
 
-          echo "===== IOPSYS DIRECTORY ====="
-          ls -lah feeds/iopsys/ || true
+          ./scripts/feeds install -a
 
-          echo "===== IOPSYS INDEX ====="
-          ls -lah feeds/iopsys.index || true
-
-          echo "===== SEARCH FOR PACKAGES ====="
-          find feeds/iopsys -maxdepth 3 \
-            \( -iname '*libeasy*' -o -iname '*hostmngr*' \) \
-            -print || true
-
-          echo "===== UPDATE LOG ====="
-          cat "$RUNNER_TEMP/iopsys-update.log"
-
-          test -d feeds/iopsys
-          test -f feeds/iopsys.index
+          echo "===== CHECK REQUIRED PACKAGES ====="
+          find package -type f \( \
+          -path '*/libnl/Makefile' -o \
+          -path '*/libeasy/Makefile' -o \
+          -path '*/hostmngr/Makefile' \
+          \) -print
 
       - name: Install required packages
         shell: bash
