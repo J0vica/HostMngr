@@ -1,139 +1,97 @@
-name: Build hostmngr (OpenWrt 24.10.0 x86_64)
+
+name: Build hostmngr for OpenWrt 24.10.0 x86_64
 
 on:
   workflow_dispatch:
   push:
-    branches: [ main, master ]
-
-permissions:
-  contents: read
-
-env:
-  OPENWRT_VERSION: "24.10.0"
-  SDK_ARCHIVE: "openwrt-sdk-24.10.0-x86-64_gcc-13.3.0_musl.Linux-x86_64.tar.zst"
-  SDK_URL: "https://downloads.openwrt.org/releases/24.10.0/targets/x86/64/openwrt-sdk-24.10.0-x86-64_gcc-13.3.0_musl.Linux-x86_64.tar.zst"
-  IOPSYS_FEED_URL: "https://dev.iopsys.eu/feed/iopsys.git"
-  IOPSYS_FEED_REF: "devel"
+    branches:
+      - main
 
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+
+    env:
+      SDK_DIR: ${{ github.workspace }}/openwrt-sdk
+      SDK_ARCHIVE: openwrt-sdk-24.10.0-x86-64_gcc-13.3.0_musl.Linux-x86_64.tar.zst
+      SDK_URL: https://downloads.openwrt.org/releases/24.10.0/targets/x86/64/openwrt-sdk-24.10.0-x86-64_gcc-13.3.0_musl.Linux-x86_64.tar.zst
+      LIBEASY_COMMIT: da04ef953af966b47d61a9de3eeeb0c6032c7ce5
 
     steps:
-      - name: Install host tools
+      - name: Checkout workflow repository
+        uses: actions/checkout@v4
+
+      - name: Install host dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential clang flex bison g++ gawk gcc-multilib \
-            gettext git libncurses-dev libssl-dev python3 \
-            rsync unzip zlib1g-dev file wget zstd
+            build-essential \
+            clang \
+            flex \
+            bison \
+            g++ \
+            gawk \
+            gcc-multilib \
+            gettext \
+            git \
+            libncurses-dev \
+            libssl-dev \
+            python3-setuptools \
+            rsync \
+            unzip \
+            zlib1g-dev \
+            file \
+            curl \
+            wget \
+            xz-utils \
+            zstd
 
-      - name: Download and unpack official OpenWrt SDK
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/openwrt-sdk"
-          wget --https-only --progress=dot:giga "$SDK_URL" -O "$RUNNER_TEMP/$SDK_ARCHIVE"
-          tar --zstd -xf "$RUNNER_TEMP/$SDK_ARCHIVE" \
-            -C "$RUNNER_TEMP/openwrt-sdk" --strip-components=1
-          echo "SDK_DIR=$RUNNER_TEMP/openwrt-sdk" >> "$GITHUB_ENV"
-
-      - name: Add IOPSYS feed and install package recipes
-
-           
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd "$SDK_DIR"
-
-          # Use the public IOPSYS feed recipes for hostmngr and libeasy.
-          printf '\nsrc-git iopsys %s;%s\n' "$IOPSYS_FEED_URL" "$IOPSYS_FEED_REF" \
-            >> feeds.conf.default
-
-          ./scripts/feeds update iopsys
-          ./scripts/feeds install -p iopsys libeasy hostmngr
-
-          echo "Installed IOPSYS package directories:"
-          find package/feeds/iopsys -maxdepth 2 -name Makefile -print
-
-          test -f package/feeds/iopsys/hostmngr/Makefile
-          test -f package/feeds/iopsys/libeasy/Makefile
-
-
-      - name: Fetch libeasy source directly from IOPSYS Git
+      - name: Download OpenWrt SDK
         shell: bash
         run: |
           set -eux
 
-          LIBEASY_COMMIT="da04ef953af966b47d61a9de3eeeb0c6032c7ce5"
-          LIBEASY_DIR="/tmp/libeasy"
+          curl -fL "$SDK_URL" \
+            -o "$RUNNER_TEMP/$SDK_ARCHIVE"
 
-          rm -rf "$LIBEASY_DIR"
-          git clone https://dev.iopsys.eu/hal/libeasy.git "$LIBEASY_DIR"
+          mkdir -p "$RUNNER_TEMP/sdk-extract"
 
-          git -C "$LIBEASY_DIR" checkout "$LIBEASY_COMMIT"
+          tar --zstd -xf "$RUNNER_TEMP/$SDK_ARCHIVE" \
+            -C "$RUNNER_TEMP/sdk-extract"
 
-          mkdir -p "$SDK_DIR/dl"
+          mv "$RUNNER_TEMP/sdk-extract/openwrt-sdk-24.10.0-x86-64_gcc-13.3.0_musl.Linux-x86_64" \
+            "$SDK_DIR"
 
-          git -C "$LIBEASY_DIR" archive \
-            --format=tar \
-            --prefix=libeasy-7.5.2/ \
-            "$LIBEASY_COMMIT" \
-            | xz -T0 > "$SDK_DIR/dl/libeasy-7.5.2_${LIBEASY_COMMIT}.tar.xz"
+          echo "SDK_DIR=$SDK_DIR"
 
-          ls -lh "$SDK_DIR/dl/libeasy-7.5.2_${LIBEASY_COMMIT}.tar.xz"
-
-      - name: Diagnose IOPSYS feed registration
+      - name: Update OpenWrt feeds
         shell: bash
         run: |
-          echo "===== SDK ROOT ====="
-          ls -la "$SDK_DIR"
-
-          echo "===== FEED CONFIGURATION ====="
-          grep -n -A 10 -B 3 "iopsys" "$SDK_DIR/feeds.conf" || true
-          grep -n -A 10 -B 3 "iopsys" "$SDK_DIR/feeds.conf.default" || true
-
-          echo "===== LIBEASY LOCATIONS ====="
-          find "$SDK_DIR" -type f -path "*/libeasy/Makefile" -print
-
-          echo "===== FEEDS DIRECTORY ====="
-          ls -la "$SDK_DIR/feeds/" || true
-
-          echo "===== PACKAGE TARGETS ====="
+          set -eux
           cd "$SDK_DIR"
-          make help 2>&1 | head -100
 
-      - name: Configure SDK packages
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd "$SDK_DIR"
-          printf '%s\n' \
-            'CONFIG_PACKAGE_libeasy=m' \
-            'CONFIG_PACKAGE_hostmngr=m' \
-            >> .config
-          make defconfig
-
-      - name: Update IOPSYS feed
-        run: |
-          cd "$SDK_DIR"
+          ./scripts/feeds update base
           ./scripts/feeds update iopsys
 
-#      - name: Install IOPSYS packages
-#        run: |
-#          cd "$SDK_DIR"
-#          ./scripts/feeds install -p iopsys libeasy hostmngr
-
-      - name: Install IOPSYS packages
+      - name: Install required packages
         shell: bash
         run: |
+          set -eux
           cd "$SDK_DIR"
-          ./scripts/feeds update iopsys
+
+          # libnl is part of the OpenWrt base feed.
+          ./scripts/feeds install -p base libnl
+
+          # IOPSYS packages.
           ./scripts/feeds install -p iopsys libeasy hostmngr
 
-          echo "===== INSTALLED PACKAGE LINKS ====="
-          ls -la package/feeds/iopsys/ || true
+          echo "===== LIBNL MAKEFILE ====="
+          test -f package/feeds/base/libnl/Makefile
+          ls -l package/feeds/base/libnl/Makefile
+
+          echo "===== IOPSYS MAKEFILES ====="
+          test -f package/feeds/iopsys/libeasy/Makefile
+          test -f package/feeds/iopsys/hostmngr/Makefile
 
       - name: Add libnl build dependency to libeasy
         shell: bash
@@ -142,126 +100,113 @@ jobs:
 
           MAKEFILE="$SDK_DIR/feeds/iopsys/libeasy/Makefile"
 
-          if ! grep -q '^PKG_BUILD_DEPENDS:=' "$MAKEFILE"; then
-            sed -i '/^PKG_NAME:=libeasy$/a PKG_BUILD_DEPENDS:=libnl' "$MAKEFILE"
+          if ! grep -q '^PKG_BUILD_DEPENDS' "$MAKEFILE"; then
+            sed -i '/^PKG_VERSION:=/a PKG_BUILD_DEPENDS:=libnl' "$MAKEFILE"
           fi
 
-          echo "===== UPDATED LIBEASY MAKEFILE ====="
-          grep -n -E 'PKG_NAME|PKG_BUILD_DEPENDS|DEPENDS' "$MAKEFILE"
+          grep -n -E 'PKG_NAME|PKG_VERSION|PKG_BUILD_DEPENDS|DEPENDS' \
+            "$MAKEFILE"
 
-      - name: Locate libnl package in SDK
+      - name: Fetch exact libeasy source commit
         shell: bash
         run: |
+          set -eux
+
+          mkdir -p "$SDK_DIR/dl"
+
+          git clone https://dev.iopsys.eu/hal/libeasy.git \
+            "$RUNNER_TEMP/libeasy"
+
+          git -C "$RUNNER_TEMP/libeasy" checkout \
+            "$LIBEASY_COMMIT"
+
+          git -C "$RUNNER_TEMP/libeasy" archive \
+            --format=tar \
+            --prefix=libeasy-7.5.2/ \
+            "$LIBEASY_COMMIT" \
+            | xz -T0 > \
+            "$SDK_DIR/dl/libeasy-7.5.2_${LIBEASY_COMMIT}.tar.xz"
+
+          ls -lh "$SDK_DIR/dl/libeasy-7.5.2_${LIBEASY_COMMIT}.tar.xz"
+
+      - name: Build OpenWrt libnl
+        shell: bash
+        run: |
+          set -eux
           cd "$SDK_DIR"
 
-          echo "===== FEED CONFIGURATION ====="
-          cat feeds.conf.default
+          make package/feeds/base/libnl/compile V=s
 
-          echo "===== LIBNL MAKEFILES ====="
-          find package feeds -type f -path '*/libnl/Makefile' -print 2>/dev/null || true
+          echo "===== STAGED LIBNL PKG-CONFIG FILES ====="
 
-          echo "===== INSTALLED FEED LINKS ====="
-          ls -la package/feeds/ || true
-
-          echo "===== EXISTING LIBNL STAGING FILES ====="
           find staging_dir/target-x86_64_musl \
-            \( -name 'libnl-3.0.pc' -o -name 'libnl-route-3.0.pc' \) \
-            -print 2>/dev/null || true
+            -name 'libnl-3.0.pc' \
+            -o -name 'libnl-route-3.0.pc'
 
-      - name: Verify libnl pkg-config
+          test -f \
+            staging_dir/target-x86_64_musl/usr/lib/pkgconfig/libnl-3.0.pc
+
+      - name: Build libeasy
         shell: bash
         run: |
+          set -eux
           cd "$SDK_DIR"
 
-          find staging_dir/target-x86_64_musl/usr/lib/pkgconfig \
-            -maxdepth 1 -name 'libnl*.pc' -print
-
-          echo "===== PKG CONFIG ENVIRONMENT ====="
-          env | grep -E 'PKG_CONFIG|STAGING_DIR' || true          
-
-      - name: Compile libeasy
-        shell: bash
-        run: |
-          cd "$SDK_DIR"
-          set -o pipefail
-
-          make package/feeds/iopsys/libeasy/compile V=s 2>&1 \
-            | tee "$RUNNER_TEMP/libeasy-build.log"
-
-      - name: Show libeasy CMake error logs
-        if: failure()
-        shell: bash
-        run: |
-          BUILD_DIR="$SDK_DIR/build_dir/target-x86_64_musl/libeasy-7.5.2"
-
-          echo "===== CMakeError.log ====="
-          if [ -f "$BUILD_DIR/CMakeFiles/CMakeError.log" ]; then
-            cat "$BUILD_DIR/CMakeFiles/CMakeError.log"
-          else
-            echo "CMakeError.log not found"
-          fi
-
-          echo "===== CMakeOutput.log ====="
-          if [ -f "$BUILD_DIR/CMakeFiles/CMakeOutput.log" ]; then
-            tail -200 "$BUILD_DIR/CMakeFiles/CMakeOutput.log"
-          else
-            echo "CMakeOutput.log not found"
-          fi
-
-          echo "===== CMakeCache.txt ====="
-          if [ -f "$BUILD_DIR/CMakeCache.txt" ]; then
-            grep -E 'CMAKE_(C|CXX)_COMPILER:|CMAKE_PREFIX_PATH:|CMAKE_FIND_ROOT_PATH:' \
-              "$BUILD_DIR/CMakeCache.txt" || true
-          fi
+          make package/feeds/iopsys/libeasy/compile V=s \
+            2>&1 | tee "$RUNNER_TEMP/libeasy-build.log"
 
       - name: Build hostmngr without Wi-Fi
         shell: bash
         run: |
-          set -euo pipefail
+          set -eux
           cd "$SDK_DIR"
 
-          # Explicitly pass the upstream build option as disabled.
-          make -j"$(nproc)" package/feeds/iopsys/hostmngr/compile \
-            HOSTMNGR_PLATFORM_HAS_WIFI=n V=s
+          # HOSTMNGR_PLATFORM_HAS_WIFI is intentionally NOT set.
+          # Wi-Fi support is optional and disabled by default.
 
-      - name: Collect IPKs and build metadata
+          make package/feeds/iopsys/hostmngr/compile V=s \
+            2>&1 | tee "$RUNNER_TEMP/hostmngr-build.log"
+
+      - name: Collect build artifacts
+        if: success()
         shell: bash
         run: |
-          set -euo pipefail
-          cd "$SDK_DIR"
-          mkdir -p "$GITHUB_WORKSPACE/dist/ipk"
-          find bin/packages -type f -name '*.ipk' -print0 |
-            while IFS= read -r -d '' pkg; do
-              cp "$pkg" "$GITHUB_WORKSPACE/dist/ipk/"
-            done
+          set -eux
 
-          if ! find "$GITHUB_WORKSPACE/dist/ipk" -maxdepth 1 \
-              -type f -name 'hostmngr_*.ipk' | grep -q .; then
-            echo "hostmngr IPK was not produced." >&2
-            find bin/packages -type f -name '*.ipk' -print
-            exit 1
-          fi
+          ARTIFACT_DIR="$RUNNER_TEMP/hostmngr-artifacts"
+          mkdir -p "$ARTIFACT_DIR"
 
-          {
-            echo "OpenWrt release: $OPENWRT_VERSION"
-            echo "Target: x86/64"
-            echo "Toolchain: GCC 13.3.0 / musl"
-            echo "Wi-Fi integration: disabled"
-            echo "IOPSYS feed: $IOPSYS_FEED_URL"
-            echo "IOPSYS feed ref: $IOPSYS_FEED_REF"
-            echo
-            echo "Built packages:"
-            find "$GITHUB_WORKSPACE/dist/ipk" -maxdepth 1 \
-              -type f -name '*.ipk' -printf '%f\n' | sort
-          } > "$GITHUB_WORKSPACE/dist/BUILD-INFO.txt"
+          find "$SDK_DIR/bin/packages" \
+            -type f -name '*.ipk' \
+            -exec cp -t "$ARTIFACT_DIR" {} +
 
-          (cd "$GITHUB_WORKSPACE/dist/ipk" && sha256sum *.ipk) \
-            > "$GITHUB_WORKSPACE/dist/SHA256SUMS"
+          cd "$ARTIFACT_DIR"
 
-      - name: Upload packages
+          find . -maxdepth 1 -type f -name '*.ipk' \
+            -exec sha256sum {} + > SHA256SUMS
+
+          echo "===== GENERATED IPK FILES ====="
+          ls -lh
+
+      - name: Upload OpenWrt packages
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: hostmngr-openwrt-24.10.0-x86_64
-          path: dist/
+          path: ${{ runner.temp }}/hostmngr-artifacts/
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 14
+
+      - name: Show diagnostics on failure
+        if: failure()
+        shell: bash
+        run: |
+          echo "===== LIBEASY BUILD LOG ====="
+          if [ -f "$RUNNER_TEMP/libeasy-build.log" ]; then
+            tail -200 "$RUNNER_TEMP/libeasy-build.log"
+          fi
+
+          echo "===== HOSTMNGR BUILD LOG ====="
+          if [ -f "$RUNNER_TEMP/hostmngr-build.log" ]; then
+            tail -200 "$RUNNER_TEMP/hostmngr-build.log"
+          fi
