@@ -104,12 +104,31 @@ jobs:
             >> .config
           make defconfig
 
-      - name: Build libeasy
+#      - name: Build libeasy
+#        shell: bash
+#       run: |
+#          set -euo pipefail
+#          cd "$SDK_DIR"
+#          make -j"$(nproc)" package/feeds/iopsys/libeasy/compile V=s
+
+      - name: Compile libeasy with verbose diagnostics
         shell: bash
         run: |
-          set -euo pipefail
-          cd "$SDK_DIR"
-          make -j"$(nproc)" package/feeds/iopsys/libeasy/compile V=s
+          set -o pipefail
+          make package/feeds/iopsys/libeasy/clean
+          make package/feeds/iopsys/libeasy/compile V=s 2>&1 | tee /tmp/libeasy-build.log
+
+      - name: Extract libeasy configuration errors
+        if: always()
+        shell: bash
+        run: |
+          echo "===== CMAKE ERRORS ====="
+          grep -in -B 15 -A 30 -E \
+            'CMake Error|error:|not found|Could NOT find|No such file|Configuring incomplete' \
+            /tmp/libeasy-build.log || true
+
+          echo "===== LAST 200 LINES ====="
+          tail -200 /tmp/libeasy-build.log
 
       - name: Show libeasy CMake error logs
         if: failure()
