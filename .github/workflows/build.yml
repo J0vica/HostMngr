@@ -64,14 +64,19 @@ jobs:
 
           echo "SDK_DIR=$SDK_DIR"
 
-      - name: Update OpenWrt feeds
+
+      - name: Update all OpenWrt feeds
         shell: bash
         run: |
           set -eux
           cd "$SDK_DIR"
 
-          ./scripts/feeds update base
-          ./scripts/feeds update iopsys
+          # Update every configured feed and generate its package index.
+          ./scripts/feeds update -a
+
+          echo "===== IOPSYS FEED INDEX ====="
+          ls -lh feeds/iopsys.index
+          grep -E '^(libeasy|hostmngr) ' feeds/iopsys.index
 
       - name: Install required packages
         shell: bash
@@ -79,19 +84,17 @@ jobs:
           set -eux
           cd "$SDK_DIR"
 
-          # libnl is part of the OpenWrt base feed.
           ./scripts/feeds install -p base libnl
+          ./scripts/feeds install -p iopsys libeasy
+          ./scripts/feeds install -p iopsys hostmngr
 
-          # IOPSYS packages.
-          ./scripts/feeds install -p iopsys libeasy hostmngr
-
-          echo "===== LIBNL MAKEFILE ====="
+          echo "===== VERIFY INSTALLED PACKAGES ====="
           test -f package/feeds/base/libnl/Makefile
-          ls -l package/feeds/base/libnl/Makefile
-
-          echo "===== IOPSYS MAKEFILES ====="
           test -f package/feeds/iopsys/libeasy/Makefile
           test -f package/feeds/iopsys/hostmngr/Makefile
+
+          echo "All three packages are registered."
+
 
       - name: Add libnl build dependency to libeasy
         shell: bash
