@@ -92,6 +92,25 @@ jobs:
           echo "===== AVAILABLE FEED INDEXES ====="
           ls -lh feeds/*.index
 
+      - name: Check feed indexes and packages
+        shell: bash
+        run: |
+          cd "$SDK_DIR"
+
+          echo "===== FEED INDEXES ====="
+          ls -lh feeds/*.index || true
+
+          echo "===== IOPSYS PACKAGE INDEX ====="
+          grep -i -E 'Package: (libeasy|hostmngr)' feeds/iopsys.index || true
+
+          echo "===== IOPSYS PACKAGE DIRECTORIES ====="
+          find feeds/iopsys -maxdepth 2 -type f -name Makefile \
+          | grep -E '/(libeasy|hostmngr)/Makefile' || true
+
+          echo "===== FEED UPDATE ERRORS ====="
+          grep -i -E 'error:|fatal:|failed|warning:' \
+          "$RUNNER_TEMP/iopsys-update.log" | tail -40 || true
+
       - name: Install package feeds
         shell: bash
         run: |
