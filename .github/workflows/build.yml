@@ -81,26 +81,7 @@ jobs:
           echo "===== FEED CONFIGURATION ====="
           cat feeds.conf
           #==============================================================
-          echo "===== TEST IOPSYS CONNECTION ====="
-          git ls-remote https://dev.iopsys.eu/feed/iopsys.git HEAD
-
-          echo "===== DOWNLOAD IOPSYS FEED ====="
-          for attempt in 1 2 3; do
-            echo "Attempt $attempt of 3"
-
-            if ./scripts/feeds update -f iopsys; then
-               echo "IOPSYS feed downloaded successfully"
-               break
-            fi
-
-            if [ "$attempt" -eq 3 ]; then
-               echo "ERROR: Cannot download IOPSYS feed after 3 attempts"
-               exit 1
-            fi
-
-            sleep 15
-          done
-
+          
       - name: Update all feeds
         shell: bash
         run: |
