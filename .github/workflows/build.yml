@@ -181,6 +181,18 @@ jobs:
 
           ls -lh "$SDK_DIR/dl/libeasy-7.5.2_${LIBEASY_COMMIT}.tar.xz"
 
+          - name: Initialize OpenWrt SDK configuration
+          shell: bash
+          run: |
+            set -euxo pipefail
+            cd "$SDK_DIR"
+
+            make defconfig
+
+            echo "===== CONFIGURATION CHECK ====="
+            test -s .config
+            ls -lh .config
+
       - name: Build OpenWrt libnl
         shell: bash
         run: |
