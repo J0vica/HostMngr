@@ -252,6 +252,14 @@ jobs:
           echo "===== KERNEL MODULE PACKAGE ====="
           find package feeds -path '*/kmod-nf-conntrack-netlink/Makefile'
 
+          echo "===== HOSTMNGR WIFI CONFIGURATION ====="
+          grep -n 'HOSTMNGR_PLATFORM_HAS_WIFI' \
+            .config feeds/iopsys/hostmngr/Makefile || true
+          
+          echo "===== HOSTMNGR SOURCE WIFI REFERENCES ====="
+          grep -R -n -i -E 'wifiutils|libwifi|wifiops|wifidefs' \
+            feeds/iopsys/hostmngr --exclude=Makefile || true
+
 #      - name: Collect build artifacts
 #        if: success()
 #        shell: bash
