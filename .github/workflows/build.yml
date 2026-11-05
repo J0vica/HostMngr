@@ -263,62 +263,59 @@ jobs:
 
           python3 - "$SDK_DIR" "$ARTIFACT_DIR" <<'PY'
           import sys
-          import subprocess
           import shutil
           import re
           import tarfile
           import io
           from pathlib import Path
-
+          
           sdk = Path(sys.argv[1])
           output = Path(sys.argv[2])
           package_dir = sdk / "bin/packages"
-
+          
           ipks = sorted(package_dir.rglob("*.ipk"))
-
+          
           if not ipks:
               raise SystemExit("ERROR: No IPK packages found")
-
+          
+          
           def read_control(ipk):
-              members = subprocess.check_output(
-                  ["ar", "t", str(ipk)], text=True
-              ).splitlines()
-
-              control_member = next(
-                  (m for m in members
-                   if m.startswith("control.tar")),
-                  None
-              )
-
-              if not control_member:
-                  raise RuntimeError(
-                      f"No control archive found in {ipk.name}"
+              with tarfile.open(ipk, mode="r:*") as outer:
+                  control_member = next(
+                      (m for m in outer.getmembers()
+                       if Path(m.name).name == "control.tar.gz"),
+                      None
                   )
-
-              raw = subprocess.check_output(
-                  ["ar", "p", str(ipk), control_member]
-              )
-
+          
+                  if control_member is None:
+                      raise RuntimeError(
+                          f"No control.tar.gz found in {ipk.name}"
+                      )
+          
+                  control_data = outer.extractfile(control_member).read()
+          
               with tarfile.open(
-                  fileobj=io.BytesIO(raw), mode="r:*"
+                  fileobj=io.BytesIO(control_data),
+                  mode="r:*"
               ) as archive:
-                  control = next(
+                  control_file = next(
                       (m for m in archive.getmembers()
                        if Path(m.name).name == "control"),
                       None
                   )
-
-                  if control is None:
+          
+                  if control_file is None:
                       raise RuntimeError(
-                          f"No control file in {ipk.name}"
+                          f"No control file found in {ipk.name}"
                       )
-
-                  content = archive.extractfile(control).read()
-                  content = content.decode("utf-8", errors="replace")
-
+          
+                  content = archive.extractfile(
+                      control_file
+                  ).read().decode("utf-8", errors="replace")
+          
               fields = {}
               current = None
-
+          
               for line in content.splitlines():
                   if line[:1].isspace() and current:
                       fields[current] += " " + line.strip()
@@ -326,14 +323,15 @@ jobs:
                       key, value = line.split(":", 1)
                       current = key.lower()
                       fields[current] = value.strip()
-
+          
               return fields
-
+          
+          
           def split_top_level(value, separator):
               result = []
               depth = 0
               start = 0
-
+          
               for i, char in enumerate(value):
                   if char == "(":
                       depth += 1
@@ -342,39 +340,43 @@ jobs:
                   elif char == separator and depth == 0:
                       result.append(value[start:i].strip())
                       start = i + 1
-
+          
               result.append(value[start:].strip())
               return [x for x in result if x]
-
+          
+          
           packages = {}
           providers = {}
-
+          
           print("Reading OpenWrt IPK metadata...")
-
+          
           for ipk in ipks:
-              fields = read_control(ipk)
+              try:
+                  fields = read_control(ipk)
+              except Exception as error:
+                  raise SystemExit(
+                      f"ERROR reading {ipk.name}: {error}"
+                  )
+          
               name = fields.get("package")
-
+          
               if not name:
-                  raise RuntimeError(
+                  raise SystemExit(
                       f"Missing Package field in {ipk.name}"
                   )
-
+          
               if name in packages:
                   print(f"WARNING: Duplicate package: {name}")
                   continue
-
+          
               packages[name] = {
                   "path": ipk,
                   "depends": fields.get("depends", ""),
                   "provides": fields.get("provides", "")
               }
-
-          # Build a map of virtual packages and their providers.
+          
           for name, info in packages.items():
-              for provided in split_top_level(
-                  info["provides"], ","
-              ):
+              for provided in split_top_level(info["provides"], ","):
                   match = re.match(
                       r"^\s*([A-Za-z0-9+_.-]+)", provided
                   )
@@ -382,75 +384,72 @@ jobs:
                       providers.setdefault(
                           match.group(1), []
                       ).append(name)
-
+          
           root = "hostmngr"
-
+          
           if root not in packages:
-              raise SystemExit(
-                  "ERROR: hostmngr IPK not found"
-              )
-
+              raise SystemExit("ERROR: hostmngr IPK not found")
+          
           selected = set()
           missing = set()
           pending = [root]
-
+          
           while pending:
               name = pending.pop()
-
+          
               if name in selected:
                   continue
-
+          
               selected.add(name)
-              depends = packages[name]["depends"]
-
-              for entry in split_top_level(depends, ","):
+          
+              for entry in split_top_level(
+                  packages[name]["depends"], ","
+              ):
                   found = None
-
+          
                   for alternative in split_top_level(entry, "|"):
                       match = re.match(
                           r"^\s*([A-Za-z0-9+_.-]+)",
                           alternative
                       )
-
+          
                       if not match:
                           continue
-
+          
                       candidate = match.group(1)
-
+          
                       if candidate in packages:
                           found = candidate
                           break
-
-                      available_providers = providers.get(
-                          candidate, []
-                      )
-
-                      if available_providers:
-                          found = available_providers[0]
+          
+                      available = providers.get(candidate, [])
+          
+                      if available:
+                          found = available[0]
                           break
-
+          
                   if found:
                       if found not in selected:
                           pending.append(found)
                   else:
                       missing.add(entry)
-
+          
           for name in sorted(selected):
               source = packages[name]["path"]
               shutil.copy2(source, output / source.name)
-
+          
           print("\n===== SELECTED PACKAGES =====")
+          
           for name in sorted(selected):
               print(name)
-
+          
           print(f"\nSelected packages: {len(selected)}")
           print(f"All generated packages: {len(ipks)}")
-
+          
           if missing:
-              print("\n===== DEPENDENCIES NOT FOUND IN GENERATED IPKS =====")
+              print("\n===== DEPENDENCIES NOT FOUND =====")
               for name in sorted(missing):
-                  print(name)
-
+                  print(name)          
           PY
 
           cd "$ARTIFACT_DIR"
