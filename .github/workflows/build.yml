@@ -231,6 +231,27 @@ jobs:
           make package/feeds/iopsys/hostmngr/compile V=s \
             2>&1 | tee "$RUNNER_TEMP/hostmngr-build.log"
 
+      - name: Diagnose hostmngr dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cd "$SDK_DIR"
+      
+          echo "===== HOSTMNGR MAKEFILE ====="
+          grep -n -A12 -B3 'define Package/hostmngr' \
+            feeds/iopsys/hostmngr/Makefile
+      
+          echo "===== LIBEASY MAKEFILE ====="
+          grep -n -A12 -B3 'define Package/libeasy' \
+            feeds/iopsys/libeasy/Makefile
+      
+          echo "===== WIFI PACKAGE REFERENCES ====="
+          grep -R -n -E 'libwifiutils|libwifi' \
+            feeds/iopsys --include='Makefile' || true
+      
+          echo "===== KERNEL MODULE PACKAGE ====="
+          find package feeds -path '*/kmod-nf-conntrack-netlink/Makefile'
+
 #      - name: Collect build artifacts
 #        if: success()
 #        shell: bash
