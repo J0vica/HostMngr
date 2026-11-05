@@ -252,7 +252,6 @@ jobs:
 #          echo "===== GENERATED IPK FILES ====="
 #          ls -lh
 
-
       - name: Collect hostmngr and runtime dependencies
         if: success()
         shell: bash
@@ -267,6 +266,8 @@ jobs:
           import subprocess
           import shutil
           import re
+          import tarfile
+          import io
           from pathlib import Path
 
           sdk = Path(sys.argv[1])
@@ -278,38 +279,117 @@ jobs:
           if not ipks:
               raise SystemExit("ERROR: No IPK packages found")
 
-          # Read package metadata from all generated IPKs.
+          def read_control(ipk):
+              members = subprocess.check_output(
+                  ["ar", "t", str(ipk)], text=True
+              ).splitlines()
+
+              control_member = next(
+                  (m for m in members
+                   if m.startswith("control.tar")),
+                  None
+              )
+
+              if not control_member:
+                  raise RuntimeError(
+                      f"No control archive found in {ipk.name}"
+                  )
+
+              raw = subprocess.check_output(
+                  ["ar", "p", str(ipk), control_member]
+              )
+
+              with tarfile.open(
+                  fileobj=io.BytesIO(raw), mode="r:*"
+              ) as archive:
+                  control = next(
+                      (m for m in archive.getmembers()
+                       if Path(m.name).name == "control"),
+                      None
+                  )
+
+                  if control is None:
+                      raise RuntimeError(
+                          f"No control file in {ipk.name}"
+                      )
+
+                  content = archive.extractfile(control).read()
+                  content = content.decode("utf-8", errors="replace")
+
+              fields = {}
+              current = None
+
+              for line in content.splitlines():
+                  if line[:1].isspace() and current:
+                      fields[current] += " " + line.strip()
+                  elif ":" in line:
+                      key, value = line.split(":", 1)
+                      current = key.lower()
+                      fields[current] = value.strip()
+
+              return fields
+
+          def split_top_level(value, separator):
+              result = []
+              depth = 0
+              start = 0
+
+              for i, char in enumerate(value):
+                  if char == "(":
+                      depth += 1
+                  elif char == ")":
+                      depth -= 1
+                  elif char == separator and depth == 0:
+                      result.append(value[start:i].strip())
+                      start = i + 1
+
+              result.append(value[start:].strip())
+              return [x for x in result if x]
+
           packages = {}
+          providers = {}
+
+          print("Reading OpenWrt IPK metadata...")
 
           for ipk in ipks:
-              name = subprocess.check_output(
-                  ["dpkg-deb", "-f", str(ipk), "Package"],
-                  text=True
-              ).strip()
+              fields = read_control(ipk)
+              name = fields.get("package")
 
-              depends = subprocess.run(
-                  ["dpkg-deb", "-f", str(ipk), "Depends"],
-                  text=True,
-                  capture_output=True
-              ).stdout.strip()
+              if not name:
+                  raise RuntimeError(
+                      f"Missing Package field in {ipk.name}"
+                  )
 
               if name in packages:
                   print(f"WARNING: Duplicate package: {name}")
+                  continue
 
               packages[name] = {
                   "path": ipk,
-                  "depends": depends
+                  "depends": fields.get("depends", ""),
+                  "provides": fields.get("provides", "")
               }
+
+          # Build a map of virtual packages and their providers.
+          for name, info in packages.items():
+              for provided in split_top_level(
+                  info["provides"], ","
+              ):
+                  match = re.match(
+                      r"^\s*([A-Za-z0-9+_.-]+)", provided
+                  )
+                  if match:
+                      providers.setdefault(
+                          match.group(1), []
+                      ).append(name)
 
           root = "hostmngr"
 
           if root not in packages:
               raise SystemExit(
-                  "ERROR: hostmngr IPK not found. "
-                  "Check the package build output."
+                  "ERROR: hostmngr IPK not found"
               )
 
-          # Resolve dependencies recursively.
           selected = set()
           missing = set()
           pending = [root]
@@ -323,40 +403,38 @@ jobs:
               selected.add(name)
               depends = packages[name]["depends"]
 
-              if not depends:
-                  continue
-
-              # Split comma-separated dependencies, preserving
-              # version constraints inside parentheses.
-              entries = re.split(r",\s*(?![^()]*\))", depends)
-
-              for entry in entries:
-                  alternatives = entry.split("|")
+              for entry in split_top_level(depends, ","):
                   found = None
 
-                  for alternative in alternatives:
-                      alternative = re.sub(
-                          r"\s*\([^)]*\)", "", alternative
-                      ).strip()
-
+                  for alternative in split_top_level(entry, "|"):
                       match = re.match(
-                          r"^([A-Za-z0-9+_.-]+)", alternative
+                          r"^\s*([A-Za-z0-9+_.-]+)",
+                          alternative
                       )
 
-                      if match:
-                          candidate = match.group(1)
+                      if not match:
+                          continue
 
-                          if candidate in packages:
-                              found = candidate
-                              break
+                      candidate = match.group(1)
+
+                      if candidate in packages:
+                          found = candidate
+                          break
+
+                      available_providers = providers.get(
+                          candidate, []
+                      )
+
+                      if available_providers:
+                          found = available_providers[0]
+                          break
 
                   if found:
                       if found not in selected:
                           pending.append(found)
                   else:
-                      missing.add(entry.strip())
+                      missing.add(entry)
 
-          # Copy only selected packages.
           for name in sorted(selected):
               source = packages[name]["path"]
               shutil.copy2(source, output / source.name)
@@ -365,27 +443,24 @@ jobs:
           for name in sorted(selected):
               print(name)
 
-          print(f"\nTotal selected: {len(selected)}")
-          print(f"Total generated: {len(ipks)}")
+          print(f"\nSelected packages: {len(selected)}")
+          print(f"All generated packages: {len(ipks)}")
 
           if missing:
-              print("\n===== DEPENDENCIES NOT FOUND AMONG GENERATED IPKS =====")
+              print("\n===== DEPENDENCIES NOT FOUND IN GENERATED IPKS =====")
               for name in sorted(missing):
                   print(name)
-              print(
-                  "\nThese may be provided by the existing OpenWrt "
-                  "installation. Check them before deploying."
-              )
+
           PY
 
           cd "$ARTIFACT_DIR"
-
           sha256sum *.ipk > SHA256SUMS
 
           echo "===== FINAL ARTIFACTS ====="
           ls -lh
           echo "===== PACKAGE COUNT ====="
           find . -maxdepth 1 -name '*.ipk' | wc -l
+
 #=====================================================================
 
       - name: Upload OpenWrt packages
