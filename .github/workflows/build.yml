@@ -231,26 +231,162 @@ jobs:
           make package/feeds/iopsys/hostmngr/compile V=s \
             2>&1 | tee "$RUNNER_TEMP/hostmngr-build.log"
 
-      - name: Collect build artifacts
+#      - name: Collect build artifacts
+#        if: success()
+#        shell: bash
+#        run: |
+#          set -eux
+
+#          ARTIFACT_DIR="$RUNNER_TEMP/hostmngr-artifacts"
+#          mkdir -p "$ARTIFACT_DIR"
+
+#          find "$SDK_DIR/bin/packages" \
+#            -type f -name '*.ipk' \
+#            -exec cp -t "$ARTIFACT_DIR" {} +
+
+#          cd "$ARTIFACT_DIR"
+
+#          find . -maxdepth 1 -type f -name '*.ipk' \
+#            -exec sha256sum {} + > SHA256SUMS
+
+#          echo "===== GENERATED IPK FILES ====="
+#          ls -lh
+
+
+      - name: Collect hostmngr and runtime dependencies
         if: success()
         shell: bash
         run: |
-          set -eux
+          set -euo pipefail
 
           ARTIFACT_DIR="$RUNNER_TEMP/hostmngr-artifacts"
           mkdir -p "$ARTIFACT_DIR"
 
-          find "$SDK_DIR/bin/packages" \
-            -type f -name '*.ipk' \
-            -exec cp -t "$ARTIFACT_DIR" {} +
+          python3 - "$SDK_DIR" "$ARTIFACT_DIR" <<'PY'
+          import sys
+          import subprocess
+          import shutil
+          import re
+          from pathlib import Path
+
+          sdk = Path(sys.argv[1])
+          output = Path(sys.argv[2])
+          package_dir = sdk / "bin/packages"
+
+          ipks = sorted(package_dir.rglob("*.ipk"))
+
+          if not ipks:
+              raise SystemExit("ERROR: No IPK packages found")
+
+          # Read package metadata from all generated IPKs.
+          packages = {}
+
+          for ipk in ipks:
+              name = subprocess.check_output(
+                  ["dpkg-deb", "-f", str(ipk), "Package"],
+                  text=True
+              ).strip()
+
+              depends = subprocess.run(
+                  ["dpkg-deb", "-f", str(ipk), "Depends"],
+                  text=True,
+                  capture_output=True
+              ).stdout.strip()
+
+              if name in packages:
+                  print(f"WARNING: Duplicate package: {name}")
+
+              packages[name] = {
+                  "path": ipk,
+                  "depends": depends
+              }
+
+          root = "hostmngr"
+
+          if root not in packages:
+              raise SystemExit(
+                  "ERROR: hostmngr IPK not found. "
+                  "Check the package build output."
+              )
+
+          # Resolve dependencies recursively.
+          selected = set()
+          missing = set()
+          pending = [root]
+
+          while pending:
+              name = pending.pop()
+
+              if name in selected:
+                  continue
+
+              selected.add(name)
+              depends = packages[name]["depends"]
+
+              if not depends:
+                  continue
+
+              # Split comma-separated dependencies, preserving
+              # version constraints inside parentheses.
+              entries = re.split(r",\s*(?![^()]*\))", depends)
+
+              for entry in entries:
+                  alternatives = entry.split("|")
+                  found = None
+
+                  for alternative in alternatives:
+                      alternative = re.sub(
+                          r"\s*\([^)]*\)", "", alternative
+                      ).strip()
+
+                      match = re.match(
+                          r"^([A-Za-z0-9+_.-]+)", alternative
+                      )
+
+                      if match:
+                          candidate = match.group(1)
+
+                          if candidate in packages:
+                              found = candidate
+                              break
+
+                  if found:
+                      if found not in selected:
+                          pending.append(found)
+                  else:
+                      missing.add(entry.strip())
+
+          # Copy only selected packages.
+          for name in sorted(selected):
+              source = packages[name]["path"]
+              shutil.copy2(source, output / source.name)
+
+          print("\n===== SELECTED PACKAGES =====")
+          for name in sorted(selected):
+              print(name)
+
+          print(f"\nTotal selected: {len(selected)}")
+          print(f"Total generated: {len(ipks)}")
+
+          if missing:
+              print("\n===== DEPENDENCIES NOT FOUND AMONG GENERATED IPKS =====")
+              for name in sorted(missing):
+                  print(name)
+              print(
+                  "\nThese may be provided by the existing OpenWrt "
+                  "installation. Check them before deploying."
+              )
+          PY
 
           cd "$ARTIFACT_DIR"
 
-          find . -maxdepth 1 -type f -name '*.ipk' \
-            -exec sha256sum {} + > SHA256SUMS
+          sha256sum *.ipk > SHA256SUMS
 
-          echo "===== GENERATED IPK FILES ====="
+          echo "===== FINAL ARTIFACTS ====="
           ls -lh
+          echo "===== PACKAGE COUNT ====="
+          find . -maxdepth 1 -name '*.ipk' | wc -l
+#=====================================================================
 
       - name: Upload OpenWrt packages
         if: success()
