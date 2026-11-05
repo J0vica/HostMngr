@@ -219,6 +219,24 @@ jobs:
           make package/feeds/iopsys/libeasy/compile V=s \
             2>&1 | tee "$RUNNER_TEMP/libeasy-build.log"
 
+      - name: Disable hostmngr Wi-Fi integration
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cd "$SDK_DIR"
+      
+          sed -i 's/^CONFIG_HOSTMNGR_PLATFORM_HAS_WIFI=y/# CONFIG_HOSTMNGR_PLATFORM_HAS_WIFI is not set/' .config
+      
+          make defconfig
+      
+          echo "===== VERIFY WIFI CONFIGURATION ====="
+          grep -n 'HOSTMNGR_PLATFORM_HAS_WIFI' .config || true
+      
+          if grep -q '^CONFIG_HOSTMNGR_PLATFORM_HAS_WIFI=y' .config; then
+            echo "ERROR: hostmngr Wi-Fi support is still enabled"
+            exit 1
+          fi
+
       - name: Build hostmngr without Wi-Fi
         shell: bash
         run: |
